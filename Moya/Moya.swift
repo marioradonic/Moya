@@ -108,6 +108,8 @@ public class MoyaProvider<T: MoyaTarget> {
     public let networkActivityClosure: Moya.NetworkActivityClosure?
     public let manager: Manager
 
+    var printAllRequestsAsCurls = false
+
     /// Initializes a provider.
     public init(endpointClosure: MoyaEndpointsClosure = MoyaProvider.DefaultEndpointMapping, endpointResolver: MoyaEndpointResolution = MoyaProvider.DefaultEnpointResolution, stubBehavior: MoyaStubbedBehavior = MoyaProvider.NoStubbingBehavior, networkActivityClosure: Moya.NetworkActivityClosure? = nil, manager: Manager = Alamofire.Manager.sharedInstance) {
         self.endpointClosure = endpointClosure
@@ -177,6 +179,10 @@ private extension MoyaProvider {
                 } else {
                     completion(data: nil, statusCode: statusCode, response:response, error: error)
                 }
+        }
+
+        if printAllRequestsAsCurls {
+            debugPrintln(request)
         }
 
         return CancellableToken {
