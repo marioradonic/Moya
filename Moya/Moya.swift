@@ -187,7 +187,7 @@ private extension MoyaProvider {
         }
 
         if printAllRequestsAsCurls {
-            debugPrintln(request)
+            debugPrint(request)
         }
 
         return CancellableToken {
