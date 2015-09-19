@@ -22,13 +22,13 @@ public func ==(lhs: Moya.ParameterEncoding, rhs: Moya.ParameterEncoding) -> Bool
 
 class EndpointSpec: QuickSpec {
     override func spec() {
-        describe("an endpoint") { () -> () in
+        describe("an endpoint") {
             var endpoint: Endpoint<GitHub>!
             
-            beforeEach { () -> () in
+            beforeEach {
                 let target: GitHub = .Zen
-                let parameters = ["Nemesis": "Harvey"] as [String: AnyObject]
-                let headerFields = ["Title": "Dominar"] as [String: AnyObject]
+                let parameters = ["Nemesis": "Harvey"]
+                let headerFields = ["Title": "Dominar"]
                 endpoint = Endpoint<GitHub>(URL: url(target), sampleResponse: .Success(200, {target.sampleData}), method: Moya.Method.GET, parameters: parameters, parameterEncoding: .JSON, httpHeaderFields: headerFields)
             }
             
@@ -63,6 +63,20 @@ class EndpointSpec: QuickSpec {
                 expect(newEndpoint.parameters.count).to(equal(endpoint.parameters.count))
                 expect(newEndpoint.parameterEncoding).to(equal(endpoint.parameterEncoding))
             }
+
+            it ("returns a new endpoint for endpointByAddingParameterEncoding") {
+                let parameterEncoding = Moya.ParameterEncoding.JSON
+                let newEndpoint = endpoint.endpointByAddingParameterEncoding(parameterEncoding)
+
+                // Make sure we updated the parameter encoding
+                expect(newEndpoint.parameterEncoding).to(equal(parameterEncoding))
+
+                // Compare other properties to ensure they've been copied correctly
+                expect(newEndpoint.URL).to(equal(endpoint.URL))
+                expect(newEndpoint.method).to(equal(endpoint.method))
+                expect(newEndpoint.parameters.count).to(equal(endpoint.parameters.count))
+                expect(newEndpoint.httpHeaderFields.count).to(equal(endpoint.httpHeaderFields.count))
+            }
             
             it("returns a correct URL request") {
                 let request = endpoint.urlRequest
@@ -75,3 +89,45 @@ class EndpointSpec: QuickSpec {
         }
     }
 }
+
+private extension String {
+    var URLEscapedString: String {
+        return self.stringByAddingPercentEncodingWithAllowedCharacters(NSCharacterSet.URLHostAllowedCharacterSet())!
+    }
+}
+
+private enum GitHub {
+    case Zen
+    case UserProfile(String)
+}
+
+extension GitHub : MoyaTarget {
+    var baseURL: NSURL { return NSURL(string: "https://api.github.com")! }
+    var path: String {
+        switch self {
+        case .Zen:
+            return "/zen"
+        case .UserProfile(let name):
+            return "/users/\(name.URLEscapedString)"
+        }
+    }
+    var method: Moya.Method {
+        return .GET
+    }
+    var parameters: [String: AnyObject] {
+        return [:]
+    }
+    var sampleData: NSData {
+        switch self {
+        case .Zen:
+            return "Half measures are as bad as nothing at all.".dataUsingEncoding(NSUTF8StringEncoding)!
+        case .UserProfile(let name):
+            return "{\"login\": \"\(name)\", \"id\": 100}".dataUsingEncoding(NSUTF8StringEncoding)!
+        }
+    }
+}
+
+private func url(route: MoyaTarget) -> String {
+    return route.baseURL.URLByAppendingPathComponent(route.path).absoluteString
+}
+

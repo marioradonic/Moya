@@ -3,7 +3,7 @@ import Moya
 import ReactiveCocoa
 import Nimble
 
-@objc class TestClass { }
+class TestClass { }
 
 // Necessary since UIImage(named:) doesn't work correctly in the test bundle
 extension UIImage {
@@ -25,17 +25,17 @@ func signalSendingData(data: NSData, statusCode: Int = 200) -> RACSignal {
 
 class RACSignalMoyaSpec: QuickSpec {
     override func spec() {
-        describe("status codes filtering", {
+        describe("status codes filtering") {
             it("filters out unrequested status codes") {
                 let data = NSData()
                 let signal = signalSendingData(data, statusCode: 10)
 
                 var errored = false
-                signal.filterStatusCodes(0...9).subscribeNext({ (object) -> Void in
+                signal.filterStatusCodes(0...9).subscribeNext { (object) -> Void in
                     XCTFail("called on non-correct status code: \(object)")
                 }, error: { (error) -> Void in
                     errored = true
-                })
+                }
                 
                 expect(errored).to(beTruthy())
             }
@@ -103,9 +103,9 @@ class RACSignalMoyaSpec: QuickSpec {
                 
                 expect(called).to(beTruthy())
             }
-        })
+        }
         
-        describe("image maping", {
+        describe("image maping") {
             it("maps data representing an image to an image") {
                 let image = UIImage.testPNGImage(named: "testImage")
                 let data = UIImageJPEGRepresentation(image, 0.75)
@@ -123,7 +123,7 @@ class RACSignalMoyaSpec: QuickSpec {
                 let data = NSData()
                 let signal = signalSendingData(data)
                 
-                var receivedError: NSError?
+                var receivedError: ErrorType?
                 signal.mapImage().subscribeNext({ (image) -> Void in
                     XCTFail("next called for invalid data")
                 }, error: { (error) -> Void in
@@ -132,9 +132,9 @@ class RACSignalMoyaSpec: QuickSpec {
                 
                 expect(receivedError?.code).to(equal(MoyaErrorCode.ImageMapping.rawValue))
             }
-        })
+        }
 
-        describe("JSON mapping", { () -> () in
+        describe("JSON mapping") {
             it("maps data representing some JSON to that JSON") {
                 let json = ["name": "John Crighton", "occupation": "Astronaut"]
                 let data = NSJSONSerialization.dataWithJSONObject(json, options: nil, error: nil)
@@ -156,7 +156,7 @@ class RACSignalMoyaSpec: QuickSpec {
                 let data = json.dataUsingEncoding(NSUTF8StringEncoding)
                 let signal = signalSendingData(data!)
                 
-                var receivedError: NSError?
+                var receivedError: ErrorType?
                 signal.mapJSON().subscribeNext({ (image) -> Void in
                     XCTFail("next called for invalid data")
                 }, error: { (error) -> Void in
@@ -166,9 +166,9 @@ class RACSignalMoyaSpec: QuickSpec {
                 expect(receivedError).toNot(beNil())
                 expect(receivedError?.domain).to(equal("\(NSCocoaErrorDomain)"))
             }
-        })
+        }
         
-        describe("string mapping", { () -> () in
+        describe("string mapping") {
             it("maps data representing a string to a string") {
                 let string = "You have the rights to the remains of a silent attorney."
                 let data = string.dataUsingEncoding(NSUTF8StringEncoding)
@@ -182,6 +182,6 @@ class RACSignalMoyaSpec: QuickSpec {
                 
                 expect(receivedString).to(equal(string))
             }
-        })
+        }
     }
 }

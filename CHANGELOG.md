@@ -1,3 +1,20 @@
+# Next
+
+# 2.2.2
+
+# 2.2.2
+
+- Adds convenience `endpointByAddingParameterEncoding` method.
+
+# 2.2.1
+
+- Adds Moya files as members of RxMoya and ReactiveMoya frameworks.
+
+# 2.2.0
+
+- Add backward-compatible call from `DefaultEnpointResolution` to `DefaultEndpointResolution` on `MoyaProvider` class. `DefaultEndpointResolution` is now used internally as the default resolver. `DefaultEnpointResolution` can be removed in a future major release.
+- Carthage support.
+
 # 2.1.0
 
 - Add option to pass an `Alamofire.Manager` to `MoyaProvider` initializer

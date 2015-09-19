@@ -18,9 +18,5 @@ profile
 DerivedData
 *.hmap
 *.xccheckout
-
-# Carthage
-Carthage
-
 # AppCode
 .idea/

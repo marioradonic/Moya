@@ -2,7 +2,7 @@ import Foundation
 import Alamofire
 
 /// Block to be executed when a request has completed.
-public typealias MoyaCompletion = (data: NSData?, statusCode: Int?, response: NSURLResponse?, error: NSError?) -> ()
+public typealias MoyaCompletion = (data: NSData?, statusCode: Int?, response: NSURLResponse?, error: ErrorType?) -> ()
 
 /// General-purpose class to store some enums and class funcs.
 public class Moya {
@@ -14,7 +14,7 @@ public class Moya {
 
     /// Network activity change notification closure typealias.
     public typealias NetworkActivityClosure = (change: NetworkActivityChangeType) -> ()
-    
+
     /// Represents an HTTP method.
     public enum Method {
         case GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, TRACE, CONNECT
@@ -49,7 +49,7 @@ public class Moya {
         case JSON
         case PropertyList(NSPropertyListFormat, NSPropertyListWriteOptions)
         case Custom((URLRequestConvertible, [String: AnyObject]?) -> (NSMutableURLRequest, NSError?))
-        
+
         func parameterEncoding() -> Alamofire.ParameterEncoding {
             switch self {
             case .URL:
@@ -88,7 +88,7 @@ public protocol Cancellable {
 /// Internal token that can be used to cancel requests
 struct CancellableToken: Cancellable {
     let cancelAction: () -> ()
-    
+
     func cancel() {
         cancelAction()
     }
@@ -101,7 +101,7 @@ public class MoyaProvider<T: MoyaTarget> {
     /// Closure that resolves an Endpoint into an NSURLRequest.
     public typealias MoyaEndpointResolution = (endpoint: Endpoint<T>) -> (NSURLRequest)
     public typealias MoyaStubbedBehavior = ((T) -> (Moya.StubbedBehavior))
-    
+
     public let endpointClosure: MoyaEndpointsClosure
     public let endpointResolver: MoyaEndpointResolution
     public let stubBehavior: MoyaStubbedBehavior
@@ -111,19 +111,19 @@ public class MoyaProvider<T: MoyaTarget> {
     public var printAllRequestsAsCurls = false
 
     /// Initializes a provider.
-    public init(endpointClosure: MoyaEndpointsClosure = MoyaProvider.DefaultEndpointMapping, endpointResolver: MoyaEndpointResolution = MoyaProvider.DefaultEnpointResolution, stubBehavior: MoyaStubbedBehavior = MoyaProvider.NoStubbingBehavior, networkActivityClosure: Moya.NetworkActivityClosure? = nil, manager: Manager = Alamofire.Manager.sharedInstance) {
+    public init(endpointClosure: MoyaEndpointsClosure = MoyaProvider.DefaultEndpointMapping, endpointResolver: MoyaEndpointResolution = MoyaProvider.DefaultEndpointResolution, stubBehavior: MoyaStubbedBehavior = MoyaProvider.NoStubbingBehavior, networkActivityClosure: Moya.NetworkActivityClosure? = nil, manager: Manager = Alamofire.Manager.sharedInstance) {
         self.endpointClosure = endpointClosure
         self.endpointResolver = endpointResolver
         self.stubBehavior = stubBehavior
         self.networkActivityClosure = networkActivityClosure
         self.manager = manager
     }
-    
+
     /// Returns an Endpoint based on the token, method, and parameters by invoking the endpointsClosure.
     public func endpoint(token: T) -> Endpoint<T> {
         return endpointClosure(token)
     }
-    
+
     /// Designated request-making method.
     public func request(token: T, completion: MoyaCompletion) -> Cancellable {
         let endpoint = self.endpoint(token)
@@ -140,10 +140,15 @@ public class MoyaProvider<T: MoyaTarget> {
 
     public class func DefaultEndpointMapping(target: T) -> Endpoint<T> {
         let url = target.baseURL.URLByAppendingPathComponent(target.path).absoluteString
-        return Endpoint(URL: url!, sampleResponse: .Success(200, {target.sampleData}), method: target.method, parameters: target.parameters)
+        return Endpoint(URL: url, sampleResponse: .Success(200, {target.sampleData}), method: target.method, parameters: target.parameters)
     }
 
+    @available(*, unavailable, renamed="DefaultEndpointResolution", message="Use #DefaultEndpointResolution method instead")
     public class func DefaultEnpointResolution(endpoint: Endpoint<T>) -> NSURLRequest {
+        return DefaultEndpointResolution(endpoint)
+    }
+
+    public class func DefaultEndpointResolution(endpoint: Endpoint<T>) -> NSURLRequest {
         return endpoint.urlRequest
     }
 
@@ -167,17 +172,17 @@ private extension MoyaProvider {
 
         // We need to keep a reference to the closure without a reference to ourself.
         let networkActivityCallback = networkActivityClosure
-        let request = manager.request(request)
-            .response { (request: NSURLRequest, response: NSHTTPURLResponse?, data: AnyObject?, error: NSError?) -> () in
+
+        let request = Alamofire.Manager.sharedInstance.request(request).response { (request: NSURLRequest?, response: NSHTTPURLResponse?, data: NSData?, error: ErrorType?) -> () in
                 networkActivityCallback?(change: .Ended)
 
                 // Alamofire always sends the data param as an NSData? type, but we'll
                 // add a check just in case something changes in the future.
                 let statusCode = response?.statusCode
-                if let data = data as? NSData {
-                    completion(data: data, statusCode: statusCode, response:response, error: error)
+                if let data = data {
+                    completion(data: data, statusCode: statusCode, response: response, error: error)
                 } else {
-                    completion(data: nil, statusCode: statusCode, response:response, error: error)
+                    completion(data: nil, statusCode: statusCode, response: response, error: error)
                 }
         }
 
