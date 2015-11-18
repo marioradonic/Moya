@@ -25,7 +25,7 @@ The first might resemble the following:
 ```swift
 let endpointClosure = { (target: MyTarget) -> Endpoint<MyTarget> in
     let url = target.baseURL.URLByAppendingPathComponent(target.path).absoluteString
-    return Endpoint(URL: url!, sampleResponse: .Success(200, {target.sampleData}), method: target.method, parameters: target.parameters)
+    return Endpoint(URL: url!, sampleResponseClosure: {.NetworkResponse(200, target.sampleData)}, method: target.method, parameters: target.parameters)
 }
 ```
 
@@ -61,7 +61,7 @@ analytics.
 
 ```swift
 let endpointClosure = { (target: MyTarget) -> Endpoint<MyTarget> in
-    let endpoint: Endpoint<MyTarget> = Endpoint<MyTarget>(URL: url(target), sampleResponse: .Success(200, {target.sampleData}), method: target.method, parameters: target.parameters)
+    let endpoint: Endpoint<MyTarget> = Endpoint<MyTarget>(URL: url(target), sampleResponseClosure: {.NetworkResponse(200, target.sampleData)}, method: target.method, parameters: target.parameters)
     return endpoint.endpointByAddingHTTPHeaderFields(["APP_NAME": "MY_AWESOME_APP"])
 }
 ```
@@ -74,7 +74,7 @@ target that actually does the authentication. We could construct an
 
 ```swift
 let endpointClosure = { (target: MyTarget) -> Endpoint<MyTarget> in
-    let endpoint: Endpoint<MyTarget> = Endpoint<MyTarget>(URL: url(target), sampleResponse: .Success(200, {target.sampleData}), method: target.method, parameters: target.parameters)
+    let endpoint: Endpoint<MyTarget> = Endpoint<MyTarget>(URL: url(target), sampleResponseClosure: {.NetworkResponse(200, target.sampleData)}, method: target.method, parameters: target.parameters)
 
     // Sign all non-authenticating requests
     switch target {
@@ -97,13 +97,11 @@ Sample responses are a requirement of the `MoyaTarget` protocol. However, they
 only specify the data returned. The Target-to-Endpoint mapping closure is where
 you can specify more details, which is useful for unit testing. 
 
-Sample responses have one of three values:
+Sample responses have one of two values:
 
-- `Success` with an `Int` status code and a closure that returns `NSData` returned data.
-- `Error`, with an `Int?` optional status code, an `NSError?` optional error, and an optional closure that returns `NSData` returned data.
-- `Closure`, with a closure that returns a sample response.
+- `NetworkResponse`, with an `Int` status code and an `NSData` returned data.
+- `NetworkError`, with an `ErrorType?` optional error type.
 
-The closure is useful for loading different sample data during unit tests. 
  
 Request Mapping
 ---------------
@@ -113,26 +111,33 @@ coding framework with which to access the network – that's Alamofire's job.
 Instead, Moya is about a way to frame your thoughts about network access and 
 provide compile-time checking of well-defined network targets. You've already 
 seen how to map targets into endpoints using the `endpointClosure` parameter
-of the `MoyaProvider` initializer. That let you create an `Endpoint` instance
+of the `MoyaProvider` initializer. That lets you create an `Endpoint` instance
 that Moya will use to reason about the network API call. At some point, that
 `Endpoint` must be resolved into an actual `NSURLRequest` to give to Alamofire. 
-That's what the `endpointResolver` parameter is for. 
+That's what the `requestClosure` parameter is for. 
 
-The `endpointResolver` is an optional, last-minute way to modify the request 
-that hits the network. It has a default value of `MoyaProvider.DefaultEnpointResolution`, 
+The `requestClosure` is an optional, last-minute way to modify the request 
+that hits the network. It has a default value of `MoyaProvider.DefaultRequestMapper`, 
 which simply uses the `urlRequest` property of the `Endpoint` instance. 
 
-This closure receives an `Endpoint` instance and is responsible for returning a
-`NSURLRequest` that represents the resources to be accessed. It's here that 
-you'd do your OAuth signing or whatever. Since you return an `NSURLRequest`, you
-can use whatever general-purpose authentication library you want. You can return 
-the `urlRequest` property of the instance that you're passed in, which would not 
-change the request at all. That could be useful for logging, for example. 
+This closure receives an `Endpoint` instance and is responsible for invoking a
+its argument of `NSURLRequest -> Void` with a request that represents the Endpoint.
+It's here that you'd do your OAuth signing or whatever. Since you may invoke the 
+closure asynchronously, you can use whatever authentication library you like ([example](https://github.com/rheinfabrik/Heimdall.swift)). 
+Instead of modifying the request, you could simply log it, instead.
 
-Note that the `endpointResolver` is *not* intended to be used for any sort of 
-application-level mapping. This closure is really about modifying properties 
-specific to the `NSURLRequest`, or providing information to the request that 
-cannot be known until that request is created, like an OAuth signature. 
+```swift
+let requestClosure = { (endpoint: Endpoint<GitHub>, done: NSURLRequest -> Void) in
+    let request = endpoint.urlRequest
+
+    // Modify the request however you like.
+
+    done(request)
+}
+provider = MoyaProvider<GitHub>(requestClosure: requestClosure)
+```
+
+This `requestClosure` is useful for modifying properties specific to the `NSURLRequest` or providing information to the request that cannot be known until that request is created, like cookies settings. Note that the `endpointClosure` mentioned above is not intended for this purpose or any request-specific application-level mapping.
 
 This parameter is actually very useful for modifying the request object. 
 `NSURLRequest` has many properties you can customize. Say you want to disable 

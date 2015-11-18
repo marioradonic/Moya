@@ -3,20 +3,19 @@ import Moya
 import ReactiveCocoa
 import Nimble
 
-class TestClass { }
-
 // Necessary since UIImage(named:) doesn't work correctly in the test bundle
-extension UIImage {
+private extension UIImage {
     class func testPNGImage(named name: String) -> UIImage {
+        class TestClass { }
         let bundle = NSBundle(forClass: TestClass().dynamicType)
         let path = bundle.pathForResource(name, ofType: "png")
         return UIImage(contentsOfFile: path!)!
     }
 }
 
-func signalSendingData(data: NSData, statusCode: Int = 200) -> RACSignal {
+private func signalSendingData(data: NSData, statusCode: Int = 200) -> RACSignal {
     return RACSignal.createSignal { (subscriber) -> RACDisposable! in
-        subscriber.sendNext(MoyaResponse(statusCode: statusCode, data: data, response: nil))
+        subscriber.sendNext(Response(statusCode: statusCode, data: data, response: nil))
         subscriber.sendCompleted()
         
         return nil
@@ -29,13 +28,13 @@ class RACSignalMoyaSpec: QuickSpec {
             it("filters out unrequested status codes") {
                 let data = NSData()
                 let signal = signalSendingData(data, statusCode: 10)
-
+                
                 var errored = false
-                signal.filterStatusCodes(0...9).subscribeNext { (object) -> Void in
-                    XCTFail("called on non-correct status code: \(object)")
-                }, error: { (error) -> Void in
-                    errored = true
-                }
+                signal.filterStatusCodes(0...9).subscribeNext({ (object) -> Void in
+                    fail("called on non-correct status code: \(object)")
+                    }, error: { (error) -> Void in
+                        errored = true
+                })
                 
                 expect(errored).to(beTruthy())
             }
@@ -46,9 +45,9 @@ class RACSignalMoyaSpec: QuickSpec {
                 
                 var errored = false
                 signal.filterSuccessfulStatusCodes().subscribeNext({ (object) -> Void in
-                    XCTFail("called on non-success status code: \(object)")
-                }, error: { (error) -> Void in
-                    errored = true
+                    fail("called on non-success status code: \(object)")
+                    }, error: { (error) -> Void in
+                        errored = true
                 })
                 
                 expect(errored).to(beTruthy())
@@ -72,9 +71,9 @@ class RACSignalMoyaSpec: QuickSpec {
                 
                 var errored = false
                 signal.filterSuccessfulStatusAndRedirectCodes().subscribeNext({ (object) -> Void in
-                    XCTFail("called on non-success status code: \(object)")
-                }, error: { (error) -> Void in
-                    errored = true
+                    fail("called on non-success status code: \(object)")
+                    }, error: { (error) -> Void in
+                        errored = true
                 })
                 
                 expect(errored).to(beTruthy())
@@ -103,13 +102,51 @@ class RACSignalMoyaSpec: QuickSpec {
                 
                 expect(called).to(beTruthy())
             }
+            
+            it("passes through correct redirect codes") {
+                let data = NSData()
+                let signal = signalSendingData(data, statusCode: 304)
+                
+                var called = false
+                signal.filterSuccessfulStatusAndRedirectCodes().subscribeNext { (object) -> Void in
+                    called = true
+                }
+                
+                expect(called).to(beTruthy())
+            }
+            
+            it("knows how to filter individual status codes") {
+                let data = NSData()
+                let signal = signalSendingData(data, statusCode: 42)
+                
+                var called = false
+                signal.filterStatusCode(42).subscribeNext { (object) -> Void in
+                    called = true
+                }
+                
+                expect(called).to(beTruthy())
+            }
+            
+            it("filters out different individual status code") {
+                let data = NSData()
+                let signal = signalSendingData(data, statusCode: 43)
+                
+                var errored = false
+                signal.filterStatusCode(42).subscribeNext({ (object) -> Void in
+                    fail("called on non-success status code: \(object)")
+                    }, error: { (error) -> Void in
+                        errored = true
+                })
+                
+                expect(errored).to(beTruthy())
+            }
         }
         
         describe("image maping") {
             it("maps data representing an image to an image") {
-                let image = UIImage.testPNGImage(named: "testImage")
+                let image = Image.testPNGImage(named: "testImage")
                 let data = UIImageJPEGRepresentation(image, 0.75)
-                let signal = signalSendingData(data)
+                let signal = signalSendingData(data!)
                 
                 var size: CGSize?
                 signal.mapImage().subscribeNext { (image) -> Void in
@@ -123,22 +160,24 @@ class RACSignalMoyaSpec: QuickSpec {
                 let data = NSData()
                 let signal = signalSendingData(data)
                 
-                var receivedError: ErrorType?
-                signal.mapImage().subscribeNext({ (image) -> Void in
-                    XCTFail("next called for invalid data")
-                }, error: { (error) -> Void in
-                    receivedError = error
+                var receivedError: NSError?
+                signal.mapImage().subscribeNext({ (object) -> Void in
+                    fail("next called for invalid data")
+                    }, error: { (error) -> Void in
+                        receivedError = error
                 })
                 
+                expect(receivedError).toNot(beNil())
+                expect(receivedError?.domain) == MoyaErrorDomain
                 expect(receivedError?.code).to(equal(MoyaErrorCode.ImageMapping.rawValue))
             }
         }
-
+        
         describe("JSON mapping") {
             it("maps data representing some JSON to that JSON") {
                 let json = ["name": "John Crighton", "occupation": "Astronaut"]
-                let data = NSJSONSerialization.dataWithJSONObject(json, options: nil, error: nil)
-                let signal = signalSendingData(data!)
+                let data = try! NSJSONSerialization.dataWithJSONObject(json, options: .PrettyPrinted)
+                let signal = signalSendingData(data)
                 
                 var receivedJSON: [String: String]?
                 signal.mapJSON().subscribeNext { (json) -> Void in
@@ -156,11 +195,11 @@ class RACSignalMoyaSpec: QuickSpec {
                 let data = json.dataUsingEncoding(NSUTF8StringEncoding)
                 let signal = signalSendingData(data!)
                 
-                var receivedError: ErrorType?
-                signal.mapJSON().subscribeNext({ (image) -> Void in
-                    XCTFail("next called for invalid data")
-                }, error: { (error) -> Void in
-                    receivedError = error
+                var receivedError: NSError?
+                signal.mapJSON().subscribeNext({ (object) -> Void in
+                    fail("next called for invalid data")
+                    }, error: { (error) -> Void in
+                        receivedError = error
                 })
                 
                 expect(receivedError).toNot(beNil())
@@ -181,6 +220,22 @@ class RACSignalMoyaSpec: QuickSpec {
                 }
                 
                 expect(receivedString).to(equal(string))
+            }
+            
+            it("ignores invalid data") {
+                let data = NSData(bytes: [0x11FFFF] as [UInt32], length: 1) //Byte exceeding UTF8
+                let signal = signalSendingData(data)
+                
+                var receivedError: NSError?
+                signal.mapString().subscribeNext({ (object) -> Void in
+                    fail("next called for invalid data")
+                    }, error: { (error) -> Void in
+                        receivedError = error
+                })
+                
+                expect(receivedError).toNot(beNil())
+                expect(receivedError?.domain) == MoyaErrorDomain
+                expect(receivedError?.code).to(equal(MoyaErrorCode.StringMapping.rawValue))
             }
         }
     }

@@ -2,7 +2,7 @@ def xcodebuild_in_demo_dir(tasks, xcprety_args: '')
   workspace = 'Demo.xcworkspace'
   scheme = 'Demo'
   configuration = 'Debug'
-  device_host = "platform='iOS Simulator',OS='9.0',name='iPhone 6'"
+  device_host = "platform='iOS Simulator',OS='9.1',name='iPhone 6s'"
 
   Dir.chdir('Demo') do
     sh "set -o pipefail && xcodebuild -workspace '#{workspace}' -scheme '#{scheme}' -configuration '#{configuration}' -sdk iphonesimulator -destination #{device_host} #{tasks} | xcpretty -c #{xcprety_args}"
@@ -29,13 +29,11 @@ task :release, :version do |task, args|
   version = args[:version]
   abort "You must specify a version in semver format." if version.nil? || version.scan(/\d+\.\d+\.\d+/).length == 0
 
-  puts "Updating podspecs."
-  ['Moya', 'RxMoya', 'ReactiveMoya'].each do |podspec|
-    filename = "#{podspec}.podspec"
-    contents = File.read(filename)
-    contents.gsub!(/s\.version\s*=\s"\d+\.\d+\.\d+"/, "s.version      = \"#{version}\"")
-    File.open(filename, 'w') { |file| file.puts contents }
-  end
+  puts "Updating podspec."
+  filename = "Moya.podspec"
+  contents = File.read(filename)
+  contents.gsub!(/s\.version\s*=\s"\d+\.\d+\.\d+"/, "s.version      = \"#{version}\"")
+  File.open(filename, 'w') { |file| file.puts contents }
 
   puts "Updating Demo project."
   Dir.chdir('Demo') do
@@ -55,5 +53,5 @@ task :release, :version do |task, args|
   sh "git push --follow-tags"
 
   puts "Pushing to CocoaPods trunk."
-  sh "pod trunk push Moya.podspec"
+  sh "pod trunk push Moya.podspec --allow-warnings"
 end

@@ -7,7 +7,7 @@ class MoyaProviderSpec: QuickSpec {
     override func spec() {
         var provider: MoyaProvider<GitHub>!
         beforeEach {
-            provider = MoyaProvider<GitHub>(stubBehavior: MoyaProvider.ImmediateStubbingBehaviour)
+            provider = MoyaProvider<GitHub>(stubClosure: MoyaProvider.ImmediatelyStub)
         }
         
         it("returns stubbed data for zen request") {
@@ -58,6 +58,34 @@ class MoyaProviderSpec: QuickSpec {
         it("uses the Alamofire.Manager.sharedInstance by default") {
             expect(provider.manager).to(beIdenticalTo(Alamofire.Manager.sharedInstance))
         }
+                
+        it("credential closure returns nil") {
+            var called = false
+            let plugin = CredentialsPlugin<HTTPBin> { (target) -> NSURLCredential? in
+                called = true
+                return nil
+            }
+            
+            let provider = MoyaProvider<HTTPBin>(stubClosure: MoyaProvider.ImmediatelyStub, plugins: [plugin])
+            let target: HTTPBin = .BasicAuth
+            provider.request(target) { (data, statusCode, response, error) in }
+            
+            expect(called) == true
+        }
+        
+        it("credential closure returns valid username and password") {
+            var called = false
+            let plugin = CredentialsPlugin<HTTPBin> { (target) -> NSURLCredential? in
+                called = true
+                return NSURLCredential(user: "user", password: "passwd", persistence: .None)
+            }
+            
+            let provider = MoyaProvider<HTTPBin>(stubClosure: MoyaProvider.ImmediatelyStub, plugins: [plugin])
+            let target: HTTPBin = .BasicAuth
+            provider.request(target) { (data, statusCode, response, error) in }
+            
+            expect(called) == true
+        }
 
         it("accepts a custom Alamofire.Manager") {
             let manager = Manager()
@@ -66,14 +94,35 @@ class MoyaProviderSpec: QuickSpec {
             expect(provider.manager).to(beIdenticalTo(manager))
         }
 
+        it("uses a custom Alamofire.Manager for session challenges") {
+            var called = false
+            let manager = Manager()
+            manager.delegate.sessionDidReceiveChallenge = { (session, challenge) in
+                called = true
+                let disposition: NSURLSessionAuthChallengeDisposition = .PerformDefaultHandling
+                return (disposition, nil)
+            }
+            let provider = MoyaProvider<GitHub>(manager: manager)
+            let target: GitHub = .Zen
+            waitUntil(timeout: 3) { done in
+                provider.request(target) { (data, statusCode, response, error) in
+                    done()
+                }
+                return
+            }
+
+            expect(called) == true
+        }
+
         it("notifies at the beginning of network requests") {
             var called = false
-            let provider = MoyaProvider<GitHub>(stubBehavior: MoyaProvider.ImmediateStubbingBehaviour, networkActivityClosure: { (change) -> () in
+            let plugin = NetworkActivityPlugin<GitHub> { (change) -> () in
                 if change == .Began {
                     called = true
                 }
-            })
-
+            }
+            
+            let provider = MoyaProvider<GitHub>(stubClosure: MoyaProvider.ImmediatelyStub, plugins: [plugin])
             let target: GitHub = .Zen
             provider.request(target) { (data, statusCode, response, error) in }
 
@@ -82,12 +131,13 @@ class MoyaProviderSpec: QuickSpec {
 
         it("notifies at the end of network requests") {
             var called = false
-            let provider = MoyaProvider<GitHub>(stubBehavior: MoyaProvider.ImmediateStubbingBehaviour, networkActivityClosure: { (change) -> () in
+            let plugin = NetworkActivityPlugin<GitHub> { (change) -> () in
                 if change == .Ended {
                     called = true
                 }
-            })
+            }
 
+            let provider = MoyaProvider<GitHub>(stubClosure: MoyaProvider.ImmediatelyStub, plugins: [plugin])
             let target: GitHub = .Zen
             provider.request(target) { (data, statusCode, response, error) in }
             
@@ -95,7 +145,7 @@ class MoyaProviderSpec: QuickSpec {
         }
 
         it("delays execution when appropriate") {
-            let provider = MoyaProvider<GitHub>(stubBehavior: MoyaProvider.DelayedStubbingBehaviour(2))
+            let provider = MoyaProvider<GitHub>(stubClosure: MoyaProvider.DelayedStub(2))
 
             let startDate = NSDate()
             var endDate: NSDate?
@@ -119,11 +169,11 @@ class MoyaProviderSpec: QuickSpec {
             
             beforeEach {
                 executed = false
-                let endpointResolution = { (endpoint: Endpoint<GitHub>) -> (NSURLRequest) in
+                let endpointResolution = { (endpoint: Endpoint<GitHub>, done: NSURLRequest -> Void) in
                     executed = true
-                    return endpoint.urlRequest
+                    done(endpoint.urlRequest)
                 }
-                provider = MoyaProvider<GitHub>(endpointResolver: endpointResolution, stubBehavior: MoyaProvider.ImmediateStubbingBehaviour)
+                provider = MoyaProvider<GitHub>(requestClosure: endpointResolution, stubClosure: MoyaProvider.ImmediatelyStub)
             }
             
             it("executes the endpoint resolver") {
@@ -137,7 +187,7 @@ class MoyaProviderSpec: QuickSpec {
         describe("with stubbed errors") {
             var provider: MoyaProvider<GitHub>!
             beforeEach {
-                provider = MoyaProvider(endpointClosure: failureEndpointClosure, stubBehavior: MoyaProvider.ImmediateStubbingBehaviour)
+                provider = MoyaProvider(endpointClosure: failureEndpointClosure, stubClosure: MoyaProvider.ImmediatelyStub)
             }
             
             it("returns stubbed data for zen request") {
@@ -167,90 +217,17 @@ class MoyaProviderSpec: QuickSpec {
                 let _ = target.sampleData
                 expect{errored}.toEventually(beTruthy(), timeout: 1, pollInterval: 0.1)
             }
-            
+
             it("returns stubbed error data when present") {
-                var errorMessage = ""
+                var receivedError: NSError?
                 
                 let target: GitHub = .UserProfile("ashfurrow")
                 provider.request(target) { (object, statusCode, response, error) in
-                    if let object = object {
-                        errorMessage = NSString(data: object, encoding: NSUTF8StringEncoding) as! String
-                    }
+                    receivedError = error as NSError?
                 }
 
-                expect{errorMessage}.toEventually(equal("Houston, we have a problem"), timeout: 1, pollInterval: 0.1)
-            }
-        }
-
-        describe("with lazy data") {
-            var provider: MoyaProvider<GitHub>!
-            beforeEach {
-                provider = MoyaProvider<GitHub>(endpointClosure: lazyEndpointClosure, stubBehavior: MoyaProvider.ImmediateStubbingBehaviour)
-            }
-
-            it("returns stubbed data for zen request") {
-                var message: String?
-
-                let target: GitHub = .Zen
-                provider.request(target) { (data, statusCode, response, error) in
-                    if let data = data {
-                        message = NSString(data: data, encoding: NSUTF8StringEncoding) as? String
-                    }
-                }
-
-                let sampleData = target.sampleData as NSData
-                expect(message).to(equal(NSString(data: sampleData, encoding: NSUTF8StringEncoding)))
+                expect(receivedError?.localizedDescription) == "Houston, we have a problem"
             }
         }
     }
-}
-
-private extension String {
-    var URLEscapedString: String {
-        return self.stringByAddingPercentEncodingWithAllowedCharacters(NSCharacterSet.URLHostAllowedCharacterSet())!
-    }
-}
-
-private enum GitHub {
-    case Zen
-    case UserProfile(String)
-}
-
-extension GitHub : MoyaTarget {
-    var baseURL: NSURL { return NSURL(string: "https://api.github.com")! }
-    var path: String {
-        switch self {
-        case .Zen:
-            return "/zen"
-        case .UserProfile(let name):
-            return "/users/\(name.URLEscapedString)"
-        }
-    }
-    var method: Moya.Method {
-        return .GET
-    }
-    var parameters: [String: AnyObject] {
-        return [:]
-    }
-    var sampleData: NSData {
-        switch self {
-        case .Zen:
-            return "Half measures are as bad as nothing at all.".dataUsingEncoding(NSUTF8StringEncoding)!
-        case .UserProfile(let name):
-            return "{\"login\": \"\(name)\", \"id\": 100}".dataUsingEncoding(NSUTF8StringEncoding)!
-        }
-    }
-}
-
-private func url(route: MoyaTarget) -> String {
-    return route.baseURL.URLByAppendingPathComponent(route.path).absoluteString
-}
-
-private let lazyEndpointClosure = { (target: GitHub) -> Endpoint<GitHub> in
-    return Endpoint<GitHub>(URL: url(target), sampleResponse: .Closure({.Success(200, {target.sampleData})}), method: target.method, parameters: target.parameters)
-}
-
-private let failureEndpointClosure = { (target: GitHub) -> Endpoint<GitHub> in
-    let errorData = "Houston, we have a problem".dataUsingEncoding(NSUTF8StringEncoding)!
-    return Endpoint<GitHub>(URL: url(target), sampleResponse: .Error(401, NSError(domain: "com.moya.error", code: 0, userInfo: nil), {errorData}), method: target.method, parameters: target.parameters)
 }
